@@ -2,12 +2,12 @@
 
 import { useState, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Play, Pause, SkipBack, SkipForward, Volume2 } from "lucide-react";
+import { Play, Pause, SkipBack, SkipForward } from "lucide-react";
 
 const TRACKS = [
-  { title: "Seoul Morning", artist: "Blair", duration: 187, src: "/audio/track1.mp3" },
-  { title: "Bukchon Rain", artist: "Blair", duration: 214, src: "/audio/track2.mp3" },
-  { title: "Late Night Studio", artist: "Blair", duration: 243, src: "/audio/track3.mp3" },
+  { title: "Seoul Morning", artist: "Blair", duration: 180 },
+  { title: "Bukchon Rain", artist: "Blair", duration: 210 },
+  { title: "Late Night Studio", artist: "Blair", duration: 240 },
 ];
 
 function formatTime(sec: number) {
@@ -17,222 +17,265 @@ function formatTime(sec: number) {
 }
 
 export default function IPodNano() {
-  const [playing, setPlaying] = useState(false);
+  const [playing, setPlaying] = useState(true); // 기본 재생 상태
   const [trackIdx, setTrackIdx] = useState(0);
-  const [progress, setProgress] = useState(0); // 0~1
   const [elapsed, setElapsed] = useState(0);
-  const [volume, setVolume] = useState(0.7);
   const [pressing, setPressing] = useState<string | null>(null);
-
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const track = TRACKS[trackIdx];
+  const progress = elapsed / track.duration;
 
-  // 재생 시뮬레이션 (실제 오디오 파일 없을 때도 UI 작동)
   useEffect(() => {
     if (playing) {
       intervalRef.current = setInterval(() => {
         setElapsed((e) => {
           const next = e + 1;
           if (next >= track.duration) {
-            nextTrack();
+            setTrackIdx((i) => (i + 1) % TRACKS.length);
+            setElapsed(0);
             return 0;
           }
-          setProgress(next / track.duration);
           return next;
         });
       }, 1000);
     } else {
       if (intervalRef.current) clearInterval(intervalRef.current);
     }
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
-  }, [playing, trackIdx]);
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [playing, trackIdx, track.duration]);
 
   const nextTrack = () => {
     setTrackIdx((i) => (i + 1) % TRACKS.length);
     setElapsed(0);
-    setProgress(0);
   };
   const prevTrack = () => {
     setTrackIdx((i) => (i - 1 + TRACKS.length) % TRACKS.length);
     setElapsed(0);
-    setProgress(0);
   };
 
-  // 클릭휠 버튼 위치
-  const wheelButtons = [
-    { id: "menu",    label: "MENU",  top: "14%",  left: "50%",  action: () => {} },
-    { id: "next",    label: "▶|",   top: "50%",  left: "82%",  action: nextTrack },
-    { id: "prev",    label: "|◀",   top: "50%",  left: "18%",  action: prevTrack },
-    { id: "play",    label: "▶II",  top: "86%",  left: "50%",  action: () => setPlaying((p) => !p) },
+  const wheelBtns = [
+    { id: "menu", label: "MENU", top: "15%", left: "50%", action: () => {} },
+    { id: "next", label: "▶|", top: "50%", left: "82%", action: nextTrack },
+    { id: "prev", label: "|◀", top: "50%", left: "18%", action: prevTrack },
+    { id: "play", label: "▶II", top: "85%", left: "50%", action: () => setPlaying((p) => !p) },
   ];
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 30 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ type: "spring", stiffness: 200, damping: 24 }}
-      className="relative select-none"
-      style={{ width: 168, userSelect: "none" }}
-    >
-      {/* ── 바디: 실버 메탈 ── */}
+    <div style={{ width: 148, position: "relative" }}>
+      {/* ── 바디 ── */}
       <div
-        className="relative rounded-[28px] overflow-hidden"
         style={{
-          width: 168,
-          height: 340,
+          width: 148,
+          height: 300,
+          borderRadius: 26,
           background:
-            "linear-gradient(160deg, #f0f0f2 0%, #d8d8dc 30%, #c8c8cc 60%, #e0e0e4 100%)",
+            "linear-gradient(160deg, #f2f2f4 0%, #e0e0e4 35%, #d0d0d4 65%, #e8e8ec 100%)",
           boxShadow:
-            "0 20px 60px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.9), inset 0 -1px 0 rgba(0,0,0,0.1)",
+            "0 16px 48px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.95), inset 0 -1px 0 rgba(0,0,0,0.08)",
+          position: "relative",
+          overflow: "hidden",
         }}
       >
-        {/* 메탈 광택 레이어 */}
+        {/* 메탈 광택 */}
         <div
-          className="absolute inset-0 rounded-[28px] pointer-events-none"
           style={{
+            position: "absolute",
+            inset: 0,
+            borderRadius: 26,
             background:
-              "linear-gradient(135deg, rgba(255,255,255,0.4) 0%, transparent 50%, rgba(0,0,0,0.05) 100%)",
+              "linear-gradient(140deg, rgba(255,255,255,0.45) 0%, transparent 45%, rgba(0,0,0,0.04) 100%)",
+            pointerEvents: "none",
           }}
         />
 
         {/* ── 화면 ── */}
         <div
-          className="absolute"
           style={{
-            top: 22,
-            left: 16,
-            right: 16,
-            height: 118,
-            borderRadius: 6,
-            background: "#1a1a1a",
-            boxShadow: "inset 0 2px 6px rgba(0,0,0,0.8)",
+            position: "absolute",
+            top: 20,
+            left: 14,
+            right: 14,
+            height: 104,
+            borderRadius: 5,
+            background: "#111",
             overflow: "hidden",
+            boxShadow: "inset 0 2px 8px rgba(0,0,0,0.9)",
           }}
         >
-          {/* 화면 내용 */}
           <div
-            className="w-full h-full flex flex-col"
             style={{
-              background: "linear-gradient(180deg, #1c2a3a 0%, #0f1a26 100%)",
+              width: "100%",
+              height: "100%",
+              background: "linear-gradient(180deg, #1c2e44 0%, #0e1a28 100%)",
+              display: "flex",
+              flexDirection: "column",
+              padding: "6px 8px",
             }}
           >
-            {/* 상단 상태바 */}
-            <div className="flex justify-between items-center px-2 pt-1.5">
-              <span className="text-[#5ac8fa] text-[8px] font-bold">iPod</span>
-              <div className="flex items-center gap-1">
-                <Volume2 size={7} className="text-white/50" />
-                <div className="flex gap-0.5">
-                  {[...Array(5)].map((_, i) => (
-                    <div
-                      key={i}
-                      className="w-1 rounded-sm"
-                      style={{
-                        height: 4 + i * 1.5,
-                        background: i < Math.round(volume * 5) ? "#5ac8fa" : "rgba(255,255,255,0.2)",
-                      }}
-                    />
-                  ))}
-                </div>
+            {/* 상단 바 */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ color: "#5ac8fa", fontSize: 8, fontWeight: 700 }}>iPod</span>
+              <div style={{ display: "flex", gap: 2, alignItems: "flex-end" }}>
+                {[3, 5, 7, 9, 11].map((h, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      width: 2,
+                      height: h,
+                      borderRadius: 1,
+                      background: playing ? "#5ac8fa" : "rgba(255,255,255,0.2)",
+                      transition: "background 0.3s",
+                    }}
+                  />
+                ))}
               </div>
             </div>
 
-            {/* 앨범 아트 + 정보 */}
-            <div className="flex items-center gap-2 px-2 mt-1">
-              {/* 앨범 아트 플레이스홀더 */}
+            {/* 앨범 + 정보 */}
+            <div style={{ display: "flex", gap: 6, marginTop: 6, alignItems: "center" }}>
+              {/* 앨범 아트 */}
               <div
-                className="shrink-0 rounded"
                 style={{
-                  width: 44,
-                  height: 44,
-                  background: "linear-gradient(135deg, #1a3a5c, #2d1b69)",
-                  border: "1px solid rgba(255,255,255,0.1)",
+                  width: 40,
+                  height: 40,
+                  borderRadius: 4,
+                  background: "linear-gradient(135deg, #1a3a5c 0%, #2d1b69 100%)",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  fontSize: 18,
+                  fontSize: 16,
+                  flexShrink: 0,
+                  border: "1px solid rgba(255,255,255,0.08)",
                 }}
               >
                 🎵
               </div>
 
-              <div className="flex-1 overflow-hidden">
+              <div style={{ flex: 1, overflow: "hidden" }}>
                 {/* 스크롤 텍스트 */}
-                <div className="overflow-hidden">
+                <div style={{ overflow: "hidden" }}>
                   <motion.p
-                    className="text-white text-[10px] font-semibold whitespace-nowrap"
-                    animate={track.title.length > 12 ? { x: ["0%", "-40%", "0%"] } : {}}
-                    transition={{ duration: 6, repeat: Infinity, ease: "linear" }}
+                    style={{ color: "#fff", fontSize: 9, fontWeight: 600, whiteSpace: "nowrap" }}
+                    animate={
+                      playing && track.title.length > 10
+                        ? { x: ["0%", "-35%", "0%"] }
+                        : { x: "0%" }
+                    }
+                    transition={{ duration: 5, repeat: Infinity, ease: "linear" }}
                   >
                     {track.title}
                   </motion.p>
                 </div>
-                <p className="text-white/50 text-[9px] mt-0.5">{track.artist}</p>
-              </div>
-
-              {/* 재생 상태 아이콘 */}
-              <div className="shrink-0">
-                {playing ? (
-                  <Pause size={10} className="text-white/70" />
-                ) : (
-                  <Play size={10} className="text-white/70" />
-                )}
+                <p style={{ color: "rgba(255,255,255,0.45)", fontSize: 8, marginTop: 2 }}>
+                  {track.artist}
+                </p>
+                <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 4 }}>
+                  {playing ? (
+                    <Pause size={8} color="rgba(255,255,255,0.6)" />
+                  ) : (
+                    <Play size={8} color="rgba(255,255,255,0.6)" />
+                  )}
+                  <span style={{ color: "rgba(255,255,255,0.4)", fontSize: 7 }}>
+                    {trackIdx + 1}/{TRACKS.length}
+                  </span>
+                </div>
               </div>
             </div>
 
             {/* 진행 바 */}
-            <div className="px-2 mt-2">
-              <div className="relative h-0.5 bg-white/20 rounded-full overflow-hidden">
+            <div style={{ marginTop: "auto", paddingTop: 4 }}>
+              <div
+                style={{
+                  height: 2,
+                  background: "rgba(255,255,255,0.15)",
+                  borderRadius: 1,
+                  overflow: "hidden",
+                }}
+              >
                 <motion.div
-                  className="absolute left-0 top-0 h-full bg-[#5ac8fa] rounded-full"
-                  style={{ width: `${progress * 100}%` }}
+                  style={{
+                    height: "100%",
+                    background: "#5ac8fa",
+                    borderRadius: 1,
+                    width: `${progress * 100}%`,
+                  }}
                 />
               </div>
-              <div className="flex justify-between mt-0.5">
-                <span className="text-white/40 text-[8px]">{formatTime(elapsed)}</span>
-                <span className="text-white/40 text-[8px]">-{formatTime(track.duration - elapsed)}</span>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  marginTop: 2,
+                }}
+              >
+                <span style={{ color: "rgba(255,255,255,0.35)", fontSize: 7 }}>
+                  {formatTime(elapsed)}
+                </span>
+                <span style={{ color: "rgba(255,255,255,0.35)", fontSize: 7 }}>
+                  -{formatTime(track.duration - elapsed)}
+                </span>
               </div>
-            </div>
-
-            {/* 트랙 번호 */}
-            <div className="flex justify-center mt-1">
-              <span className="text-white/30 text-[8px]">
-                {trackIdx + 1} of {TRACKS.length}
-              </span>
             </div>
           </div>
         </div>
 
         {/* ── 클릭 휠 ── */}
         <div
-          className="absolute"
-          style={{ bottom: 28, left: 16, right: 16, height: 136 }}
+          style={{
+            position: "absolute",
+            bottom: 24,
+            left: 14,
+            right: 14,
+            height: 120,
+          }}
         >
           {/* 바깥 링 */}
           <div
-            className="absolute inset-0 rounded-full"
             style={{
+              position: "absolute",
+              inset: 0,
+              borderRadius: "50%",
               background:
-                "linear-gradient(145deg, #c8c8cc 0%, #b8b8bc 50%, #d0d0d4 100%)",
+                "linear-gradient(145deg, #d0d0d4 0%, #b8b8bc 40%, #c8c8cc 70%, #d8d8dc 100%)",
               boxShadow:
-                "inset 0 2px 6px rgba(0,0,0,0.2), 0 2px 4px rgba(255,255,255,0.8)",
+                "inset 0 2px 8px rgba(0,0,0,0.18), 0 2px 4px rgba(255,255,255,0.9)",
             }}
           />
 
-          {/* 휠 버튼들 */}
-          {wheelButtons.map((btn) => (
+          {/* 버튼들 */}
+          {wheelBtns.map((btn) => (
             <motion.button
               key={btn.id}
-              className="absolute -translate-x-1/2 -translate-y-1/2 flex items-center justify-center"
-              style={{ top: btn.top, left: btn.left, width: 32, height: 32 }}
-              whileTap={{ scale: 0.85 }}
+              style={{
+                position: "absolute",
+                top: btn.top,
+                left: btn.left,
+                transform: "translate(-50%, -50%)",
+                width: 28,
+                height: 28,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+              }}
+              whileTap={{ scale: 0.82 }}
               onPointerDown={() => setPressing(btn.id)}
-              onPointerUp={() => { setPressing(null); btn.action(); }}
+              onPointerUp={() => {
+                setPressing(null);
+                btn.action();
+              }}
             >
               <span
-                className="text-[9px] font-semibold"
                 style={{
-                  color: pressing === btn.id ? "#333" : "#666",
-                  letterSpacing: btn.id === "menu" ? "0.05em" : 0,
+                  fontSize: btn.id === "menu" ? 7 : 9,
+                  fontWeight: 700,
+                  color: pressing === btn.id ? "#222" : "#555",
+                  letterSpacing: btn.id === "menu" ? "0.08em" : 0,
+                  transition: "color 0.1s",
                 }}
               >
                 {btn.label}
@@ -242,42 +285,63 @@ export default function IPodNano() {
 
           {/* 가운데 버튼 */}
           <motion.button
-            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full flex items-center justify-center"
             style={{
-              width: 50,
-              height: 50,
+              position: "absolute",
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%, -50%)",
+              width: 46,
+              height: 46,
+              borderRadius: "50%",
               background:
-                "linear-gradient(145deg, #d8d8dc 0%, #c0c0c4 100%)",
+                "linear-gradient(145deg, #d4d4d8 0%, #bcbcc0 100%)",
               boxShadow:
-                "inset 0 1px 3px rgba(0,0,0,0.2), 0 1px 2px rgba(255,255,255,0.8)",
+                "inset 0 1px 3px rgba(0,0,0,0.18), 0 1px 2px rgba(255,255,255,0.85)",
+              border: "none",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
             }}
-            whileTap={{ scale: 0.93 }}
+            whileTap={{ scale: 0.91 }}
             onPointerUp={() => setPlaying((p) => !p)}
           >
-            {playing
-              ? <Pause size={14} className="text-gray-600" />
-              : <Play size={14} className="text-gray-600 ml-0.5" />
-            }
+            {playing ? (
+              <Pause size={13} color="#444" />
+            ) : (
+              <Play size={13} color="#444" style={{ marginLeft: 1 }} />
+            )}
           </motion.button>
         </div>
 
-        {/* 하단 커넥터 표시 */}
+        {/* 커넥터 */}
         <div
-          className="absolute bottom-8 left-1/2 -translate-x-1/2 rounded-sm"
           style={{
-            width: 32,
-            height: 5,
-            background: "rgba(0,0,0,0.15)",
-            boxShadow: "inset 0 1px 2px rgba(0,0,0,0.2)",
+            position: "absolute",
+            bottom: 7,
+            left: "50%",
+            transform: "translateX(-50%)",
+            width: 28,
+            height: 4,
+            borderRadius: 2,
+            background: "rgba(0,0,0,0.12)",
           }}
         />
       </div>
 
       {/* 그림자 */}
       <div
-        className="absolute -bottom-3 left-4 right-4 blur-xl opacity-40 rounded-full"
-        style={{ height: 16, background: "rgba(0,0,0,0.8)" }}
+        style={{
+          position: "absolute",
+          bottom: -6,
+          left: 12,
+          right: 12,
+          height: 10,
+          background: "rgba(0,0,0,0.35)",
+          filter: "blur(10px)",
+          borderRadius: "50%",
+        }}
       />
-    </motion.div>
+    </div>
   );
 }
