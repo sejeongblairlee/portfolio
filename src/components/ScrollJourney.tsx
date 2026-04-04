@@ -48,8 +48,8 @@ export default function ScrollJourney() {
           style={{ opacity: phase1Opacity, scale: phase1Scale, y: phase1Y }}
         >
           <Image
-            src="https://images.unsplash.com/photo-1534430480872-3498386e7856?w=1920&q=80"
-            alt="북촌 거리"
+            src="https://images.unsplash.com/photo-1548115184-bc6544d06a58?w=1920&q=85"
+            alt="서울 북촌 골목"
             fill
             priority
             className="object-cover"
@@ -77,7 +77,7 @@ export default function ScrollJourney() {
           style={{ opacity: phase2Opacity, scale: phase2Scale, y: phase2Y }}
         >
           <Image
-            src="https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=1920&q=80"
+            src="https://images.unsplash.com/photo-1611532736597-de2d4265fba3?w=1920&q=85"
             alt="자작나무 책상 위 맥북"
             fill
             className="object-cover"
