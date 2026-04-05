@@ -1,19 +1,16 @@
 "use client";
 
 /**
- * IPodModel
- * ─────────────────────────────────────────
- * GLB 교체 방법:
- *   1. public/models/ipod.glb 배치
- *   2. MODEL_URL = "/models/ipod.glb" 로 변경
+ * IPodModel — 개별 드래그 회전 + 부유 애니메이션
+ * GLB 교체: MODEL_URL = "/models/ipod.glb"
  */
 
 import { useRef, RefObject } from "react";
-import { useFrame } from "@react-three/fiber";
-import { RoundedBox, useGLTF } from "@react-three/drei";
+import { useFrame, useThree } from "@react-three/fiber";
+import { RoundedBox } from "@react-three/drei";
 import * as THREE from "three";
 
-const MODEL_URL: string | null = null; // → "/models/ipod.glb"
+const MODEL_URL: string | null = null;
 
 const silverMat = new THREE.MeshPhysicalMaterial({
   color: "#E2E2E6",
@@ -23,7 +20,6 @@ const silverMat = new THREE.MeshPhysicalMaterial({
   clearcoat: 0.4,
   clearcoatRoughness: 0.1,
 });
-
 const screenMatIPod = new THREE.MeshPhysicalMaterial({
   color: "#040810",
   emissive: new THREE.Color("#1A3060"),
@@ -32,7 +28,6 @@ const screenMatIPod = new THREE.MeshPhysicalMaterial({
   metalness: 0,
   reflectivity: 0.85,
 });
-
 const wheelMat = new THREE.MeshPhysicalMaterial({
   color: "#D0D0D4",
   metalness: 0.75,
@@ -40,49 +35,33 @@ const wheelMat = new THREE.MeshPhysicalMaterial({
   clearcoat: 0.3,
 });
 
-function ProceduralIPod({
-  screenRef,
-}: {
-  screenRef: RefObject<THREE.Mesh | null>;
-}) {
+function ProceduralIPod({ screenRef }: { screenRef: RefObject<THREE.Mesh | null> }) {
   return (
     <>
-      {/* 바디 */}
       <RoundedBox args={[0.58, 1.14, 0.078]} radius={0.062} smoothness={6}>
         <primitive object={silverMat} attach="material" />
       </RoundedBox>
-
-      {/* 화면 베젤 */}
       <mesh position={[0, 0.28, 0.04]}>
         <boxGeometry args={[0.42, 0.48, 0.004]} />
         <meshPhysicalMaterial color="#C8C8CC" metalness={0.5} roughness={0.15} />
       </mesh>
-
-      {/* 화면 — 줌 타겟 */}
+      {/* 화면 — zoom 타겟 */}
       <mesh ref={screenRef} position={[0, 0.28, 0.043]}>
         <boxGeometry args={[0.38, 0.44, 0.003]} />
         <primitive object={screenMatIPod} attach="material" />
       </mesh>
-
-      {/* 클릭 휠 바깥 링 */}
       <mesh position={[0, -0.24, 0.04]} rotation={[Math.PI / 2, 0, 0]}>
         <torusGeometry args={[0.165, 0.055, 16, 48]} />
         <primitive object={wheelMat} attach="material" />
       </mesh>
-
-      {/* 클릭 휠 채움 */}
       <mesh position={[0, -0.24, 0.034]}>
         <circleGeometry args={[0.11, 40]} />
         <primitive object={wheelMat} attach="material" />
       </mesh>
-
-      {/* 가운데 버튼 */}
       <mesh position={[0, -0.24, 0.044]}>
         <circleGeometry args={[0.072, 32]} />
         <meshPhysicalMaterial color="#D8D8DC" metalness={0.6} roughness={0.12} clearcoat={0.5} />
       </mesh>
-
-      {/* 커넥터 */}
       <mesh position={[0, -0.596, 0]}>
         <boxGeometry args={[0.12, 0.018, 0.04]} />
         <meshPhysicalMaterial color="#B0B0B4" metalness={0.8} roughness={0.15} />
@@ -91,52 +70,59 @@ function ProceduralIPod({
   );
 }
 
-function GLBIPod({
-  url,
-  screenRef,
-}: {
-  url: string;
-  screenRef: RefObject<THREE.Mesh | null>;
-}) {
-  const { scene } = useGLTF(url);
-  return (
-    <>
-      <primitive object={scene} />
-      <mesh ref={screenRef} position={[0, 0.28, 0.043]} visible={false}>
-        <boxGeometry args={[0.38, 0.44, 0.003]} />
-        <meshBasicMaterial />
-      </mesh>
-    </>
-  );
-}
-
 interface Props {
   screenRef: RefObject<THREE.Mesh | null>;
   onClick: () => void;
-  isInteracting: boolean;
   zooming: boolean;
 }
 
-export default function IPodModel({
-  screenRef,
-  onClick,
-  isInteracting,
-  zooming,
-}: Props) {
-  const groupRef       = useRef<THREE.Group>(null!);
-  const ampRef         = useRef(1);
-  const pointerDownPos = useRef({ x: 0, y: 0 });
+export default function IPodModel({ screenRef, onClick, zooming }: Props) {
+  const { gl } = useThree();
+  const groupRef = useRef<THREE.Group>(null!);
+
+  const drag = useRef({
+    active:  false,
+    lastX:   0,
+    lastY:   0,
+    startX:  0,
+    startY:  0,
+    startMs: 0,
+    velX:    0,
+    velY:    0,
+  });
+
+  const rotY     = useRef(0);
+  const rotX     = useRef(0);
+  const floatAmp = useRef(1);
 
   useFrame((state, delta) => {
-    if (!groupRef.current) return;
-    const target = isInteracting || zooming ? 0 : 1;
-    ampRef.current = THREE.MathUtils.lerp(ampRef.current, target, delta * 3);
+    if (!groupRef.current || zooming) return;
+    const t = state.clock.elapsedTime + 1.4; // MacBook과 위상 차이
+    const d = drag.current;
 
-    const t   = state.clock.elapsedTime + 1.4; // MacBook과 위상 차이
-    const amp = ampRef.current;
-    groupRef.current.position.y = Math.sin(t * 0.48) * 0.11 * amp;
-    groupRef.current.rotation.y = Math.sin(t * 0.22) * 0.07 * amp;
-    groupRef.current.rotation.x = Math.sin(t * 0.33) * 0.02 * amp;
+    if (!d.active) {
+      const decay = Math.pow(0.88, delta * 60);
+      d.velX *= decay;
+      d.velY *= decay;
+      rotY.current += d.velX;
+      rotX.current += d.velY;
+
+      if (Math.abs(d.velY) < 0.002) {
+        rotX.current = THREE.MathUtils.lerp(rotX.current, 0, delta * 1.8);
+      }
+
+      floatAmp.current = THREE.MathUtils.lerp(floatAmp.current, 1, delta * 2.5);
+      const fa = floatAmp.current;
+
+      groupRef.current.position.y = Math.sin(t * 0.48) * 0.11 * fa;
+      groupRef.current.rotation.z = Math.sin(t * 0.31) * 0.018 * fa;
+      groupRef.current.rotation.y = rotY.current + Math.sin(t * 0.22) * 0.07 * fa;
+      groupRef.current.rotation.x = rotX.current;
+    } else {
+      floatAmp.current = THREE.MathUtils.lerp(floatAmp.current, 0, delta * 8);
+      groupRef.current.rotation.y = rotY.current;
+      groupRef.current.rotation.x = rotX.current;
+    }
   });
 
   return (
@@ -144,21 +130,49 @@ export default function IPodModel({
       ref={groupRef}
       position={[-1.9, 0, 0.3]}
       onPointerDown={(e) => {
-        pointerDownPos.current = { x: e.clientX, y: e.clientY };
+        e.stopPropagation();
+        gl.domElement.setPointerCapture(e.pointerId);
+        document.body.style.cursor = "grabbing";
+        drag.current = {
+          active:  true,
+          lastX:   e.clientX,
+          lastY:   e.clientY,
+          startX:  e.clientX,
+          startY:  e.clientY,
+          startMs: Date.now(),
+          velX:    0,
+          velY:    0,
+        };
+      }}
+      onPointerMove={(e) => {
+        if (!drag.current.active) return;
+        const dx = e.clientX - drag.current.lastX;
+        const dy = e.clientY - drag.current.lastY;
+
+        drag.current.velX = dx * 0.009;
+        drag.current.velY = dy * 0.005;
+        rotY.current += drag.current.velX;
+        rotX.current += drag.current.velY;
+        rotX.current = THREE.MathUtils.clamp(rotX.current, -0.7, 0.7);
+
+        drag.current.lastX = e.clientX;
+        drag.current.lastY = e.clientY;
       }}
       onPointerUp={(e) => {
-        const dx   = e.clientX - pointerDownPos.current.x;
-        const dy   = e.clientY - pointerDownPos.current.y;
-        if (Math.sqrt(dx * dx + dy * dy) < 6) onClick();
+        gl.domElement.releasePointerCapture(e.pointerId);
+        drag.current.active = false;
+        document.body.style.cursor = "pointer";
+
+        const dx   = e.clientX - drag.current.startX;
+        const dy   = e.clientY - drag.current.startY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const ms   = Date.now() - drag.current.startMs;
+        if (dist < 6 && ms < 300) onClick();
       }}
-      onPointerOver={() => { if (!zooming) document.body.style.cursor = "pointer"; }}
-      onPointerOut={() => { document.body.style.cursor = "default"; }}
+      onPointerOver={() => { if (!zooming && !drag.current.active) document.body.style.cursor = "grab"; }}
+      onPointerOut={() => { if (!drag.current.active) document.body.style.cursor = "default"; }}
     >
-      {MODEL_URL ? (
-        <GLBIPod url={MODEL_URL} screenRef={screenRef} />
-      ) : (
-        <ProceduralIPod screenRef={screenRef} />
-      )}
+      {MODEL_URL ? null : <ProceduralIPod screenRef={screenRef} />}
 
       {/* 바닥 그림자 */}
       <mesh position={[0, -0.72, 0]} rotation={[-Math.PI / 2, 0, 0]} scale={[0.28, 0.18, 1]}>
