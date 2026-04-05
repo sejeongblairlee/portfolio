@@ -1,9 +1,9 @@
-import ScrollJourney from "@/components/ScrollJourney";
+import ThreeSceneLoader from "@/components/ThreeSceneLoader";
 
 export default function Home() {
   return (
-    <main>
-      <ScrollJourney />
+    <main style={{ width: "100vw", height: "100vh", overflow: "hidden" }}>
+      <ThreeSceneLoader />
     </main>
   );
 }
