@@ -1,198 +1,358 @@
 "use client";
 
-import { useRef, useState, useEffect, useCallback } from "react";
+import { useRef, useState, useCallback, Suspense } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { OrbitControls, Environment } from "@react-three/drei";
 import { motion, AnimatePresence } from "framer-motion";
 import * as THREE from "three";
 
 import MacBookModel from "./MacBookModel";
 import IPodModel from "./IPodModel";
 import MacOSDesktop from "./MacOSDesktop";
+import MusicPlayer from "./MusicPlayer";
 
-// ── 카메라 줌인 리그 ──
-interface RigProps {
-  zooming: boolean;
-  targetPos: THREE.Vector3 | null;
-  onEntered: () => void;
+// ── 씬 모드 ──
+type Mode = "idle" | "diving-macbook" | "diving-ipod" | "macos" | "music" | "returning";
+
+// ─────────────────────────────────────────────────────
+// 카메라 애니메이션 컨트롤러
+// ─────────────────────────────────────────────────────
+const INITIAL_POS = new THREE.Vector3(0, 0.8, 5.5);
+const INITIAL_FOV = 50;
+
+interface CamAnim {
+  active: boolean;
+  progress: number;
+  duration: number;
+  startPos: THREE.Vector3;
+  endPos: THREE.Vector3;
+  startFov: number;
+  endFov: number;
+  onComplete: (() => void) | null;
 }
 
-function CameraRig({ zooming, targetPos, onEntered }: RigProps) {
+function CameraController({
+  mode,
+  macbookScreenRef,
+  ipodScreenRef,
+  onModeChange,
+  orbitEnabled,
+}: {
+  mode: Mode;
+  macbookScreenRef: React.MutableRefObject<THREE.Mesh | null>;
+  ipodScreenRef: React.MutableRefObject<THREE.Mesh | null>;
+  onModeChange: (m: Mode) => void;
+  orbitEnabled: boolean;
+}) {
   const { camera } = useThree();
-  const progressRef  = useRef(0);
-  const startPosRef  = useRef(new THREE.Vector3());
-  const startFovRef  = useRef(50);
-  const enteredRef   = useRef(false);
-  const lookAtTarget = useRef(new THREE.Vector3(0.5, 0.3, 0));
-  const initialized  = useRef(false);
+  const anim = useRef<CamAnim>({
+    active: false,
+    progress: 0,
+    duration: 2.4,
+    startPos: INITIAL_POS.clone(),
+    endPos: INITIAL_POS.clone(),
+    startFov: INITIAL_FOV,
+    endFov: INITIAL_FOV,
+    onComplete: null,
+  });
+  const prevMode = useRef<Mode>("idle");
 
-  useEffect(() => {
-    if (zooming && targetPos) {
-      startPosRef.current.copy(camera.position);
-      startFovRef.current = (camera as THREE.PerspectiveCamera).fov;
-      progressRef.current = 0;
-      enteredRef.current  = false;
-      initialized.current = true;
+  // 모드 변경 시 애니메이션 시작
+  if (mode !== prevMode.current) {
+    prevMode.current = mode;
+    const cam = camera as THREE.PerspectiveCamera;
+
+    if (mode === "diving-macbook" && macbookScreenRef.current) {
+      const target = new THREE.Vector3();
+      macbookScreenRef.current.getWorldPosition(target);
+      target.z += 0.3;
+      target.y += 0.04;
+
+      anim.current = {
+        active: true, progress: 0, duration: 2.4,
+        startPos: camera.position.clone(),
+        endPos: target,
+        startFov: cam.fov, endFov: 7,
+        onComplete: () => onModeChange("macos"),
+      };
     }
-  }, [zooming, targetPos]); // eslint-disable-line
+
+    if (mode === "diving-ipod" && ipodScreenRef.current) {
+      const target = new THREE.Vector3();
+      ipodScreenRef.current.getWorldPosition(target);
+      target.z += 0.25;
+      target.y += 0.02;
+
+      anim.current = {
+        active: true, progress: 0, duration: 2.0,
+        startPos: camera.position.clone(),
+        endPos: target,
+        startFov: cam.fov, endFov: 9,
+        onComplete: () => onModeChange("music"),
+      };
+    }
+
+    if (mode === "returning") {
+      anim.current = {
+        active: true, progress: 0, duration: 1.6,
+        startPos: camera.position.clone(),
+        endPos: INITIAL_POS.clone(),
+        startFov: (camera as THREE.PerspectiveCamera).fov,
+        endFov: INITIAL_FOV,
+        onComplete: () => onModeChange("idle"),
+      };
+    }
+  }
 
   useFrame((_, delta) => {
-    if (!zooming || !targetPos || !initialized.current) return;
+    const a = anim.current;
+    if (!a.active) return;
 
-    // quartic ease-in: 처음엔 느리게, 끝으로 갈수록 급격히 가속
-    progressRef.current = Math.min(1, progressRef.current + delta / 2.2);
-    const t    = progressRef.current;
-    const ease = t * t * t * t;
+    a.progress = Math.min(1, a.progress + delta / a.duration);
 
-    // 카메라 위치 보간
-    camera.position.lerpVectors(startPosRef.current, targetPos, ease);
+    // 다이브: quartic ease-in (급가속)
+    // 복귀: cubic ease-out (부드럽게 감속)
+    const isDiving = mode === "diving-macbook" || mode === "diving-ipod";
+    const t   = a.progress;
+    const ease = isDiving
+      ? t * t * t * t
+      : 1 - Math.pow(1 - t, 3);
 
-    // FOV 좁히기: 50 → 8 (망원 렌즈로 빨려 들어가는 느낌)
+    camera.position.lerpVectors(a.startPos, a.endPos, ease);
+
     const cam = camera as THREE.PerspectiveCamera;
-    cam.fov   = THREE.MathUtils.lerp(startFovRef.current, 8, ease);
+    cam.fov = THREE.MathUtils.lerp(a.startFov, a.endFov, ease);
     cam.updateProjectionMatrix();
 
-    // lookAt
-    lookAtTarget.current.lerp(targetPos, ease * 0.6);
-    camera.lookAt(lookAtTarget.current);
+    // 다이브 시 화면 중심으로 lookAt
+    if (isDiving) {
+      camera.lookAt(
+        THREE.MathUtils.lerp(a.startPos.x, a.endPos.x, ease),
+        THREE.MathUtils.lerp(a.startPos.y, a.endPos.y, ease),
+        0
+      );
+    }
 
-    if (t >= 1 && !enteredRef.current) {
-      enteredRef.current = true;
-      onEntered();
+    if (a.progress >= 1) {
+      a.active = false;
+      a.onComplete?.();
     }
   });
 
-  return null;
+  return (
+    <OrbitControls
+      enabled={orbitEnabled}
+      target={[0, 0.1, 0]}
+      minDistance={2.5}
+      maxDistance={9}
+      minPolarAngle={Math.PI * 0.2}
+      maxPolarAngle={Math.PI * 0.78}
+      dampingFactor={0.08}
+      enableDamping
+      makeDefault
+    />
+  );
 }
 
-// ── 씬 내부 컴포넌트 ──
+// ─────────────────────────────────────────────────────
+// 씬 내부 컨텐츠
+// ─────────────────────────────────────────────────────
 function SceneContents({
-  screenRef,
-  onMacBookClick,
-  zooming,
-  zoomTarget,
-  onEntered,
+  mode,
+  macbookScreenRef,
+  ipodScreenRef,
+  isInteracting,
+  setIsInteracting,
+  onModeChange,
 }: {
-  screenRef: React.MutableRefObject<THREE.Mesh | null>;
-  onMacBookClick: () => void;
-  zooming: boolean;
-  zoomTarget: THREE.Vector3 | null;
-  onEntered: () => void;
+  mode: Mode;
+  macbookScreenRef: React.MutableRefObject<THREE.Mesh | null>;
+  ipodScreenRef: React.MutableRefObject<THREE.Mesh | null>;
+  isInteracting: boolean;
+  setIsInteracting: (v: boolean) => void;
+  onModeChange: (m: Mode) => void;
 }) {
+  const isDiving  = mode === "diving-macbook" || mode === "diving-ipod";
+  const isOverlay = mode === "macos" || mode === "music";
+  const zooming   = isDiving;
+  const orbitOk   = mode === "idle" || mode === "returning";
+
   return (
     <>
       <color attach="background" args={["#F5F5F7"]} />
 
-      {/* 조명 — 외부 HDR 없이 순수 조명만 사용 */}
-      <ambientLight intensity={1.1} />
-      <directionalLight position={[5, 10, 6]}  intensity={1.6} />
-      <directionalLight position={[-4, 4, -4]} intensity={0.4} color="#ddeeff" />
-      <directionalLight position={[0, -4, 4]}  intensity={0.25} color="#fff8ee" />
-      <hemisphereLight args={["#f0f4ff", "#e8e8e8", 0.5]} />
+      {/* 기본 조명 (Environment 로드 실패 시 fallback) */}
+      <ambientLight intensity={0.85} />
+      <directionalLight position={[-4, 8, 5]} intensity={1.5} castShadow />
+      <directionalLight position={[5, 3, -4]} intensity={0.4} color="#d8eaff" />
+      <directionalLight position={[0, -3, 4]} intensity={0.2} color="#fff6ee" />
 
-      <MacBookModel
-        screenRef={screenRef}
-        onClick={onMacBookClick}
-        zooming={zooming}
-      />
-      <IPodModel />
+      {/* Environment Map — 반사/반사광 (Suspense로 실패해도 fallback 유지) */}
+      <Suspense fallback={null}>
+        <Environment preset="studio" background={false} />
+      </Suspense>
 
-      <CameraRig
-        zooming={zooming}
-        targetPos={zoomTarget}
-        onEntered={onEntered}
+      {/* 오브젝트 */}
+      {!isOverlay && (
+        <>
+          <MacBookModel
+            screenRef={macbookScreenRef}
+            onClick={() => {
+              if (mode === "idle") onModeChange("diving-macbook");
+            }}
+            isInteracting={isInteracting}
+            zooming={zooming}
+          />
+          <IPodModel
+            screenRef={ipodScreenRef}
+            onClick={() => {
+              if (mode === "idle") onModeChange("diving-ipod");
+            }}
+            isInteracting={isInteracting}
+            zooming={zooming}
+          />
+        </>
+      )}
+
+      {/* 카메라 컨트롤러 */}
+      <CameraController
+        mode={mode}
+        macbookScreenRef={macbookScreenRef}
+        ipodScreenRef={ipodScreenRef}
+        onModeChange={onModeChange}
+        orbitEnabled={orbitOk && !isOverlay}
       />
+
+      {/* OrbitControls 인터랙션 감지 */}
+      {orbitOk && (
+        <OrbitControls
+          onStart={() => setIsInteracting(true)}
+          onEnd={() => setIsInteracting(false)}
+          makeDefault={false}
+          enabled={false} // CameraController가 이미 OrbitControls를 포함하므로 이 인스턴스는 이벤트 감지용
+        />
+      )}
     </>
   );
 }
 
-// ── 최상위 컴포넌트 ──
+// ─────────────────────────────────────────────────────
+// 최상위
+// ─────────────────────────────────────────────────────
 export default function ThreeScene() {
-  const screenRef  = useRef<THREE.Mesh | null>(null);
-  const [zooming,    setZooming]    = useState(false);
-  const [showMacOS,  setShowMacOS]  = useState(false);
-  const [zoomTarget, setZoomTarget] = useState<THREE.Vector3 | null>(null);
+  const macbookScreenRef = useRef<THREE.Mesh | null>(null);
+  const ipodScreenRef    = useRef<THREE.Mesh | null>(null);
 
-  const handleMacBookClick = useCallback(() => {
-    if (zooming || showMacOS) return;
-    if (!screenRef.current) return;
+  const [mode,           setMode]           = useState<Mode>("idle");
+  const [isInteracting,  setIsInteracting]  = useState(false);
 
-    const worldPos = new THREE.Vector3();
-    screenRef.current.getWorldPosition(worldPos);
+  const handleModeChange = useCallback((m: Mode) => setMode(m), []);
+  const handleBack       = useCallback(() => setMode("returning"), []);
 
-    // 화면 조금 앞까지만 이동
-    const target = worldPos.clone();
-    target.z += 0.35;
-    target.y += 0.05;
-
-    setZoomTarget(target);
-    setZooming(true);
-  }, [zooming, showMacOS]);
-
-  const handleEntered = useCallback(() => {
-    setShowMacOS(true);
-  }, []);
+  const isDiving    = mode === "diving-macbook" || mode === "diving-ipod";
+  const showMacOS   = mode === "macos";
+  const showMusic   = mode === "music";
+  const showOverlay = showMacOS || showMusic;
 
   return (
     <div style={{ width: "100vw", height: "100vh", position: "relative" }}>
+      {/* ── 3D 캔버스 ── */}
       <Canvas
-        camera={{ position: [0, 0.8, 5.5], fov: 50 }}
+        camera={{ position: [0, 0.8, 5.5], fov: INITIAL_FOV }}
         gl={{ antialias: true, alpha: false }}
         dpr={[1, 2]}
+        shadows
       >
         <SceneContents
-          screenRef={screenRef}
-          onMacBookClick={handleMacBookClick}
-          zooming={zooming}
-          zoomTarget={zoomTarget}
-          onEntered={handleEntered}
+          mode={mode}
+          macbookScreenRef={macbookScreenRef}
+          ipodScreenRef={ipodScreenRef}
+          isInteracting={isInteracting}
+          setIsInteracting={setIsInteracting}
+          onModeChange={handleModeChange}
         />
       </Canvas>
 
-      {/* 줌인 시 화이트 플래시 */}
+      {/* ── 다이브 시 화이트 플래시 ── */}
       <AnimatePresence>
-        {zooming && !showMacOS && (
+        {isDiving && (
           <motion.div
             className="absolute inset-0 pointer-events-none"
             initial={{ opacity: 0 }}
             animate={{ opacity: [0, 0, 0.5, 1] }}
-            transition={{ duration: 2.2, times: [0, 0.45, 0.78, 1] }}
+            transition={{ duration: 2.4, times: [0, 0.42, 0.75, 1] }}
             style={{ background: "#fff" }}
           />
         )}
       </AnimatePresence>
 
-      {/* macOS 데스크탑 */}
+      {/* ── macOS 데스크탑 ── */}
       <AnimatePresence>
         {showMacOS && (
           <motion.div
             className="absolute inset-0"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ duration: 0.45 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.4 }}
           >
             <MacOSDesktop visible />
+            {/* 돌아가기 버튼 */}
+            <motion.button
+              className="absolute top-10 left-8 flex items-center gap-2"
+              initial={{ opacity: 0, x: -8 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.5 }}
+              onClick={handleBack}
+              style={{
+                color: "rgba(255,255,255,0.55)",
+                fontSize: 12,
+                letterSpacing: "0.06em",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                fontFamily: "Pretendard, sans-serif",
+                zIndex: 200,
+              }}
+            >
+              ← Back
+            </motion.button>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* 클릭 힌트 */}
+      {/* ── 뮤직 플레이어 ── */}
       <AnimatePresence>
-        {!zooming && !showMacOS && (
+        {showMusic && (
+          <motion.div className="absolute inset-0" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <MusicPlayer onBack={handleBack} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── 클릭 힌트 ── */}
+      <AnimatePresence>
+        {mode === "idle" && (
           <motion.p
-            className="absolute bottom-10 left-1/2 -translate-x-1/2 pointer-events-none"
+            className="absolute bottom-10 left-1/2 -translate-x-1/2 pointer-events-none text-center"
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
-            transition={{ delay: 1.0, duration: 0.7 }}
+            transition={{ delay: 1.2, duration: 0.7 }}
             style={{
-              color: "rgba(0,0,0,0.26)",
+              color: "rgba(0,0,0,0.24)",
               fontSize: 11,
               letterSpacing: "0.28em",
               textTransform: "uppercase",
               fontFamily: "Pretendard, sans-serif",
+              lineHeight: 1.8,
             }}
           >
-            Click the MacBook
+            Click MacBook · Click iPod
+            <br />
+            <span style={{ fontSize: 10, letterSpacing: "0.18em" }}>
+              Drag to orbit
+            </span>
           </motion.p>
         )}
       </AnimatePresence>
