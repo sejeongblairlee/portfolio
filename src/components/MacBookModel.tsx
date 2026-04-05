@@ -19,7 +19,6 @@ const SPACE_BLACK = {
 
 export default function MacBookModel({ screenRef, onClick, zooming }: Props) {
   const groupRef = useRef<THREE.Group>(null!);
-  const [hovered, setHovered] = [useRef(false), null];
 
   useFrame((state) => {
     if (zooming || !groupRef.current) return;

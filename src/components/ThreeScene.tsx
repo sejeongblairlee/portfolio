@@ -2,7 +2,6 @@
 
 import { useRef, useState, useEffect, useCallback } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Environment, Preload } from "@react-three/drei";
 import { motion, AnimatePresence } from "framer-motion";
 import * as THREE from "three";
 
@@ -19,41 +18,42 @@ interface RigProps {
 
 function CameraRig({ zooming, targetPos, onEntered }: RigProps) {
   const { camera } = useThree();
-  const progressRef = useRef(0);
-  const startPosRef = useRef(new THREE.Vector3());
-  const startFovRef = useRef(50);
-  const enteredRef  = useRef(false);
-  const lookAtRef   = useRef(new THREE.Vector3(0, 0.2, 0));
+  const progressRef  = useRef(0);
+  const startPosRef  = useRef(new THREE.Vector3());
+  const startFovRef  = useRef(50);
+  const enteredRef   = useRef(false);
+  const lookAtTarget = useRef(new THREE.Vector3(0.5, 0.3, 0));
+  const initialized  = useRef(false);
 
-  // 줌 시작 시 현재 카메라 상태 저장
   useEffect(() => {
     if (zooming && targetPos) {
       startPosRef.current.copy(camera.position);
       startFovRef.current = (camera as THREE.PerspectiveCamera).fov;
       progressRef.current = 0;
       enteredRef.current  = false;
+      initialized.current = true;
     }
-  }, [zooming, targetPos, camera]);
+  }, [zooming, targetPos]); // eslint-disable-line
 
   useFrame((_, delta) => {
-    if (!zooming || !targetPos) return;
+    if (!zooming || !targetPos || !initialized.current) return;
 
-    // ease-in quart: 처음엔 느리게, 끝으로 갈수록 급격히 가속
+    // quartic ease-in: 처음엔 느리게, 끝으로 갈수록 급격히 가속
     progressRef.current = Math.min(1, progressRef.current + delta / 2.2);
-    const t = progressRef.current;
-    const ease = t * t * t * t; // quartic ease-in
+    const t    = progressRef.current;
+    const ease = t * t * t * t;
 
-    // 카메라 위치
+    // 카메라 위치 보간
     camera.position.lerpVectors(startPosRef.current, targetPos, ease);
 
-    // FOV 좁히기: 50 → 8 (망원 렌즈 효과)
+    // FOV 좁히기: 50 → 8 (망원 렌즈로 빨려 들어가는 느낌)
     const cam = camera as THREE.PerspectiveCamera;
-    cam.fov = THREE.MathUtils.lerp(startFovRef.current, 8, ease);
+    cam.fov   = THREE.MathUtils.lerp(startFovRef.current, 8, ease);
     cam.updateProjectionMatrix();
 
-    // lookAt: 화면 중심을 향해
-    lookAtRef.current.lerp(targetPos, ease * 0.5);
-    camera.lookAt(lookAtRef.current);
+    // lookAt
+    lookAtTarget.current.lerp(targetPos, ease * 0.6);
+    camera.lookAt(lookAtTarget.current);
 
     if (t >= 1 && !enteredRef.current) {
       enteredRef.current = true;
@@ -64,15 +64,15 @@ function CameraRig({ zooming, targetPos, onEntered }: RigProps) {
   return null;
 }
 
-// ── 메인 씬 내부 ──
-function Scene({
+// ── 씬 내부 컴포넌트 ──
+function SceneContents({
   screenRef,
   onMacBookClick,
   zooming,
   zoomTarget,
   onEntered,
 }: {
-  screenRef: React.RefObject<THREE.Mesh | null>;
+  screenRef: React.MutableRefObject<THREE.Mesh | null>;
   onMacBookClick: () => void;
   zooming: boolean;
   zoomTarget: THREE.Vector3 | null;
@@ -80,24 +80,15 @@ function Scene({
 }) {
   return (
     <>
-      {/* 배경색 */}
       <color attach="background" args={["#F5F5F7"]} />
 
-      {/* 조명 — 제품 사진 스튜디오 느낌 */}
-      <ambientLight intensity={0.7} />
-      <directionalLight
-        position={[4, 8, 5]}
-        intensity={1.4}
-        castShadow
-        shadow-mapSize={[2048, 2048]}
-      />
-      <directionalLight position={[-4, 3, -3]} intensity={0.35} color="#E8F0FF" />
-      <directionalLight position={[0, -5, 3]}  intensity={0.2}  color="#FFF8F0" />
+      {/* 조명 — 외부 HDR 없이 순수 조명만 사용 */}
+      <ambientLight intensity={1.1} />
+      <directionalLight position={[5, 10, 6]}  intensity={1.6} />
+      <directionalLight position={[-4, 4, -4]} intensity={0.4} color="#ddeeff" />
+      <directionalLight position={[0, -4, 4]}  intensity={0.25} color="#fff8ee" />
+      <hemisphereLight args={["#f0f4ff", "#e8e8e8", 0.5]} />
 
-      {/* HDR 환경광 */}
-      <Environment preset="studio" />
-
-      {/* 오브젝트 */}
       <MacBookModel
         screenRef={screenRef}
         onClick={onMacBookClick}
@@ -105,7 +96,6 @@ function Scene({
       />
       <IPodModel />
 
-      {/* 카메라 리그 */}
       <CameraRig
         zooming={zooming}
         targetPos={zoomTarget}
@@ -117,26 +107,25 @@ function Scene({
 
 // ── 최상위 컴포넌트 ──
 export default function ThreeScene() {
-  const screenRef = useRef<THREE.Mesh>(null);
+  const screenRef  = useRef<THREE.Mesh | null>(null);
   const [zooming,    setZooming]    = useState(false);
   const [showMacOS,  setShowMacOS]  = useState(false);
   const [zoomTarget, setZoomTarget] = useState<THREE.Vector3 | null>(null);
 
   const handleMacBookClick = useCallback(() => {
     if (zooming || showMacOS) return;
+    if (!screenRef.current) return;
 
-    if (screenRef.current) {
-      const worldPos = new THREE.Vector3();
-      screenRef.current.getWorldPosition(worldPos);
+    const worldPos = new THREE.Vector3();
+    screenRef.current.getWorldPosition(worldPos);
 
-      // 화면 약간 앞에서 멈추기 (너무 깊이 들어가면 검게 됨)
-      const target = worldPos.clone();
-      target.z += 0.4;  // 화면 앞면 기준 약간 안쪽
-      target.y += 0.05;
+    // 화면 조금 앞까지만 이동
+    const target = worldPos.clone();
+    target.z += 0.35;
+    target.y += 0.05;
 
-      setZoomTarget(target);
-      setZooming(true);
-    }
+    setZoomTarget(target);
+    setZooming(true);
   }, [zooming, showMacOS]);
 
   const handleEntered = useCallback(() => {
@@ -145,44 +134,41 @@ export default function ThreeScene() {
 
   return (
     <div style={{ width: "100vw", height: "100vh", position: "relative" }}>
-      {/* Three.js 캔버스 */}
       <Canvas
         camera={{ position: [0, 0.8, 5.5], fov: 50 }}
         gl={{ antialias: true, alpha: false }}
         dpr={[1, 2]}
-        style={{ background: "#F5F5F7" }}
       >
-        <Scene
+        <SceneContents
           screenRef={screenRef}
           onMacBookClick={handleMacBookClick}
           zooming={zooming}
           zoomTarget={zoomTarget}
           onEntered={handleEntered}
         />
-        <Preload all />
       </Canvas>
 
-      {/* 줌인 중 화이트 플래시 오버레이 */}
+      {/* 줌인 시 화이트 플래시 */}
       <AnimatePresence>
         {zooming && !showMacOS && (
           <motion.div
             className="absolute inset-0 pointer-events-none"
             initial={{ opacity: 0 }}
-            animate={{ opacity: [0, 0, 0.4, 1] }}
-            transition={{ duration: 2.2, times: [0, 0.5, 0.8, 1] }}
+            animate={{ opacity: [0, 0, 0.5, 1] }}
+            transition={{ duration: 2.2, times: [0, 0.45, 0.78, 1] }}
             style={{ background: "#fff" }}
           />
         )}
       </AnimatePresence>
 
-      {/* macOS 데스크탑 오버레이 */}
+      {/* macOS 데스크탑 */}
       <AnimatePresence>
         {showMacOS && (
           <motion.div
             className="absolute inset-0"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ duration: 0.5 }}
+            transition={{ duration: 0.45 }}
           >
             <MacOSDesktop visible />
           </motion.div>
@@ -193,17 +179,16 @@ export default function ThreeScene() {
       <AnimatePresence>
         {!zooming && !showMacOS && (
           <motion.p
-            className="absolute bottom-10 left-1/2 -translate-x-1/2"
+            className="absolute bottom-10 left-1/2 -translate-x-1/2 pointer-events-none"
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
-            transition={{ delay: 1.2, duration: 0.6 }}
+            transition={{ delay: 1.0, duration: 0.7 }}
             style={{
-              color: "rgba(0,0,0,0.28)",
+              color: "rgba(0,0,0,0.26)",
               fontSize: 11,
               letterSpacing: "0.28em",
               textTransform: "uppercase",
-              pointerEvents: "none",
               fontFamily: "Pretendard, sans-serif",
             }}
           >
